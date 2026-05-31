@@ -8,7 +8,7 @@ A practical timesheets tracker that displays time entries from Google Sheets and
 - Search and filters for status and billable work
 - Summary metrics for total hours, billable hours, submitted entries, and approved entries
 - Time entry form with generated entry IDs and submission timestamps
-- Sample JSON, CSV, and public Google Sheet data for quick previews and setup
+- Live SheetBest API endpoint plus JSON, CSV, and public Google Sheet sample data
 - Responsive design powered by Tailwind CSS
 
 ## Quick Start
@@ -45,9 +45,10 @@ This template includes:
 
 - `timesheets.json` for local read-only preview data
 - `timesheets.csv` for importing the same rows into Google Sheets
-- [Public sample Google Sheet](https://docs.google.com/spreadsheets/d/19yVKkxBdYHufvmUoh7ErpESXOabc0PkYNmpPnnwlFSE/edit) with the same schema and demo rows
+- [Public sample Google Sheet](https://docs.google.com/spreadsheets/d/1F-GV1V86RTXXdJw9_UMTEShxWiUAcybPdRoLHZd7MdA/edit) with the same schema and demo rows
+- Live SheetBest endpoint: `https://api.sheetbest.com/sheets/1f5b6dbe-51eb-41e0-a452-85e4d3ba3c8f/tabs/Timesheets`
 
-To turn the preview into a live SheetBest demo:
+To use your own copy:
 
 1. Make a copy of the public sample Google Sheet, or import `timesheets.csv` into your own Google Sheet.
 2. Confirm the sheet has a tab named `Timesheets`.
@@ -58,13 +59,19 @@ To turn the preview into a live SheetBest demo:
 
 ### Read Data
 
-Replace the local JSON preview:
+The template is wired to a live SheetBest demo endpoint:
+
+```html
+<tbody data-sheet-best="https://api.sheetbest.com/sheets/1f5b6dbe-51eb-41e0-a452-85e4d3ba3c8f/tabs/Timesheets">
+```
+
+To use local static preview data instead, replace it with:
 
 ```html
 <tbody data-sheet-best="./timesheets.json">
 ```
 
-with your SheetBest endpoint:
+To use your own SheetBest connection, replace it with your endpoint:
 
 ```html
 <tbody data-sheet-best="https://api.sheetbest.com/sheets/YOUR_SHEET_ID/tabs/Timesheets">
@@ -72,7 +79,13 @@ with your SheetBest endpoint:
 
 ### Write Data
 
-Replace the form endpoint:
+The form is wired to the same live demo endpoint:
+
+```html
+<form data-sheet-best="https://api.sheetbest.com/sheets/1f5b6dbe-51eb-41e0-a452-85e4d3ba3c8f/tabs/Timesheets">
+```
+
+To use your own sheet, replace the form endpoint:
 
 ```html
 <form data-sheet-best="https://api.sheetbest.com/sheets/YOUR_SHEET_ID/tabs/Timesheets">
