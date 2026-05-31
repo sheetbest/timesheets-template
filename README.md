@@ -8,7 +8,7 @@ A practical timesheets tracker that displays time entries from Google Sheets and
 - Search and filters for status and billable work
 - Summary metrics for total hours, billable hours, submitted entries, and approved entries
 - Time entry form with generated entry IDs and submission timestamps
-- Sample JSON and CSV data for quick local previews and Google Sheets import
+- Sample JSON, CSV, and public Google Sheet data for quick previews and setup
 - Responsive design powered by Tailwind CSS
 
 ## Quick Start
@@ -45,11 +45,12 @@ This template includes:
 
 - `timesheets.json` for local read-only preview data
 - `timesheets.csv` for importing the same rows into Google Sheets
+- [Public sample Google Sheet](https://docs.google.com/spreadsheets/d/19yVKkxBdYHufvmUoh7ErpESXOabc0PkYNmpPnnwlFSE/edit) with the same schema and demo rows
 
 To turn the preview into a live SheetBest demo:
 
-1. Import `timesheets.csv` into a Google Sheet.
-2. Create a tab named `Timesheets`.
+1. Make a copy of the public sample Google Sheet, or import `timesheets.csv` into your own Google Sheet.
+2. Confirm the sheet has a tab named `Timesheets`.
 3. Connect the sheet in SheetBest.
 4. Replace the read and write endpoints in `index.html`.
 
