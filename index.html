@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timesheets - Track Client Work in Google Sheets</title>
+  <meta name="description" content="Track employee timesheets, project hours, billable work, and approval status with Google Sheets and SheetBest API.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheet.best/sheet-best-templates.js"></script>
+
+  <script>
+    const PLACEHOLDER_ENDPOINT = 'YOUR_SHEET_ID';
+
+    function getTimesheetRows() {
+      return Array.from(document.querySelectorAll('.timesheet-row'));
+    }
+
+    function numberFromRow(row, key) {
+      return Number.parseFloat(row.dataset[key] || '0') || 0;
+    }
+
+    function decorateRows() {
+      const statusClasses = {
+        'Approved': 'bg-green-100 text-green-800',
+        'Submitted': 'bg-yellow-100 text-yellow-800',
+        'In Review': 'bg-blue-100 text-blue-800',
+        'Needs Changes': 'bg-red-100 text-red-800'
+      };
+
+      getTimesheetRows().forEach(row => {
+        const statusPill = row.querySelector('.status-pill');
+        const billablePill = row.querySelector('.billable-pill');
+        const status = row.dataset.status || 'Submitted';
+        const billable = row.dataset.billable || 'No';
+
+        statusPill.className = `status-pill inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClasses[status] || 'bg-gray-100 text-gray-800'}`;
+        billablePill.className = `billable-pill inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${billable === 'Yes' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}`;
+      });
+    }
+
+    function refreshSummary(rows = getTimesheetRows()) {
+      const visibleRows = rows.filter(row => !row.classList.contains('hidden'));
+      const totalHours = visibleRows.reduce((sum, row) => sum + numberFromRow(row, 'hours'), 0);
+      const billableHours = visibleRows
+        .filter(row => row.dataset.billable === 'Yes')
+        .reduce((sum, row) => sum + numberFromRow(row, 'hours'), 0);
+      const submittedCount = visibleRows.filter(row => row.dataset.status === 'Submitted' || row.dataset.status === 'In Review').length;
+      const approvedCount = visibleRows.filter(row => row.dataset.status === 'Approved').length;
+
+      document.getElementById('totalHours').textContent = totalHours.toFixed(2).replace(/\.00$/, '');
+      document.getElementById('billableHours').textContent = billableHours.toFixed(2).replace(/\.00$/, '');
+      document.getElementById('submittedCount').textContent = submittedCount;
+      document.getElementById('approvedCount').textContent = approvedCount;
+      document.getElementById('visibleCount').textContent = visibleRows.length;
+      document.getElementById('empty_state').classList.toggle('hidden', visibleRows.length !== 0);
+    }
+
+    function applyFilters() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const status = document.getElementById('statusFilter').value;
+      const billable = document.getElementById('billableFilter').value;
+      const rows = getTimesheetRows();
+
+      rows.forEach(row => {
+        const searchable = [
+          row.dataset.employee,
+          row.dataset.client,
+          row.dataset.project,
+          row.dataset.task,
+          row.dataset.notes
+        ].join(' ').toLowerCase();
+
+        const matchesSearch = !query || searchable.includes(query);
+        const matchesStatus = !status || row.dataset.status === status;
+        const matchesBillable = !billable || row.dataset.billable === billable;
+        row.classList.toggle('hidden', !(matchesSearch && matchesStatus && matchesBillable));
+      });
+
+      refreshSummary(rows);
+    }
+
+    function resetFilters() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('statusFilter').value = '';
+      document.getElementById('billableFilter').value = '';
+      applyFilters();
+    }
+
+    function setGeneratedFields() {
+      const now = new Date();
+      document.getElementById('entryId').value = `TS-${now.getTime().toString().slice(-6)}`;
+      document.getElementById('submittedAt').value = now.toISOString().slice(0, 16).replace('T', ' ');
+      document.getElementById('workDate').value = now.toISOString().slice(0, 10);
+    }
+
+    function calculateHours() {
+      const start = document.getElementById('startTime').value;
+      const end = document.getElementById('endTime').value;
+
+      if (!start || !end) return;
+
+      const [startHour, startMinute] = start.split(':').map(Number);
+      const [endHour, endMinute] = end.split(':').map(Number);
+      const startTotal = startHour * 60 + startMinute;
+      const endTotal = endHour * 60 + endMinute;
+      const minutes = endTotal - startTotal;
+
+      if (minutes > 0) {
+        document.getElementById('hours').value = (minutes / 60).toFixed(2).replace(/\.00$/, '');
+      }
+    }
+
+    document.addEventListener('sheetbest-load-complete', () => {
+      document.getElementById('loading').classList.add('hidden');
+      decorateRows();
+      applyFilters();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      setGeneratedFields();
+
+      document.querySelectorAll('tbody[data-sheet-best]').forEach(element => {
+        element.addEventListener('sheetbest-load-failed', function(event) {
+          console.log('Load failed:', event.detail.status, element.getAttribute('data-sheet-best'));
+          document.getElementById('fail_message').classList.remove('hidden');
+          document.getElementById('loading').classList.add('hidden');
+        });
+      });
+
+      ['searchInput', 'statusFilter', 'billableFilter'].forEach(id => {
+        document.getElementById(id).addEventListener('input', applyFilters);
+      });
+
+      ['startTime', 'endTime'].forEach(id => {
+        document.getElementById(id).addEventListener('input', calculateHours);
+      });
+
+      document.querySelectorAll('form[data-sheet-best]').forEach(form => {
+        form.addEventListener('submit', event => {
+          if (form.getAttribute('data-sheet-best').includes(PLACEHOLDER_ENDPOINT)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            form.querySelector('.returnMessage').textContent = 'Preview mode: replace YOUR_SHEET_ID with your SheetBest endpoint to save entries.';
+          }
+        }, true);
+
+        form.addEventListener('submit-finished', () => {
+          form.reset();
+          setGeneratedFields();
+          form.querySelector('.returnMessage').textContent = 'Time entry submitted successfully!';
+        });
+      });
+    });
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2">
+    <a href="https://github.com/sheetbest/timesheets-template/generate"
+       class="inline-flex items-center rounded-md border border-green-600 bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+      Use this template
+    </a>
+    <a href="https://github.com/sheetbest/timesheets-template"
+       class="inline-flex items-center rounded-md border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+      <svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M10 0C4.477 0 0 4.484 0 10.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0110 4.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.203 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.942.359.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0020 10.017C20 4.484 15.522 0 10 0z" clip-rule="evenodd"></path>
+      </svg>
+      View code
+    </a>
+    <a href="./timesheets.csv" download
+       class="inline-flex items-center rounded-md border border-green-600 bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+      <svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M5 20h14v-2H5v2Zm7-18v10.17l3.59-3.58L17 10l-6 6-6-6 1.41-1.41L10 12.17V2h2Z"/>
+      </svg>
+      Download CSV
+    </a>
+  </div>
+
+  <main class="mx-auto max-w-7xl px-6 py-12 lg:px-8">
+    <section class="max-w-3xl">
+      <p class="text-sm font-semibold text-green-700">Timesheets & Approvals</p>
+      <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Timesheets with Google Sheets</h1>
+      <p class="mt-5 text-lg leading-8 text-slate-600">
+        Track client work, billable hours, approval status, and project notes in a spreadsheet-backed timesheet workflow.
+      </p>
+    </section>
+
+    <section class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-sm font-medium text-slate-500">Total hours</p>
+        <p id="totalHours" class="mt-2 text-3xl font-bold text-slate-950">0</p>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-sm font-medium text-slate-500">Billable hours</p>
+        <p id="billableHours" class="mt-2 text-3xl font-bold text-green-700">0</p>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-sm font-medium text-slate-500">Awaiting review</p>
+        <p id="submittedCount" class="mt-2 text-3xl font-bold text-amber-700">0</p>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-sm font-medium text-slate-500">Approved</p>
+        <p id="approvedCount" class="mt-2 text-3xl font-bold text-emerald-700">0</p>
+      </div>
+    </section>
+
+    <section class="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="grid gap-4 lg:grid-cols-[1fr_180px_180px_auto]">
+        <input type="text" id="searchInput" placeholder="Search employee, client, project, or task"
+               class="block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 placeholder:text-slate-400 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+        <select id="statusFilter" class="block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+          <option value="">All statuses</option>
+          <option value="Submitted">Submitted</option>
+          <option value="In Review">In Review</option>
+          <option value="Approved">Approved</option>
+          <option value="Needs Changes">Needs Changes</option>
+        </select>
+        <select id="billableFilter" class="block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+          <option value="">All work</option>
+          <option value="Yes">Billable</option>
+          <option value="No">Non-billable</option>
+        </select>
+        <button type="button" onclick="resetFilters()"
+                class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+          Reset
+        </button>
+      </div>
+      <p class="mt-3 text-sm text-slate-500"><span id="visibleCount">0</span> entries shown</p>
+    </section>
+
+    <section class="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div id="loading" class="p-6">
+        <div class="space-y-4">
+          <div class="h-5 w-1/3 animate-pulse rounded bg-slate-200"></div>
+          <div class="h-16 animate-pulse rounded bg-slate-100"></div>
+          <div class="h-16 animate-pulse rounded bg-slate-100"></div>
+          <div class="h-16 animate-pulse rounded bg-slate-100"></div>
+        </div>
+      </div>
+
+      <div id="fail_message" class="hidden p-6 text-center text-red-600">
+        Failed to load timesheet entries. Run this template through a local server or replace the endpoint with your SheetBest API URL.
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Person</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Client / Project</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Hours</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Task</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-200 bg-white" data-sheet-best="./timesheets.json">
+            <tr class="timesheet-row align-top"
+                data-employee="{{ Employee }}"
+                data-client="{{ Client }}"
+                data-project="{{ Project }}"
+                data-task="{{ Task }}"
+                data-notes="{{ Notes }}"
+                data-hours="{{ Hours }}"
+                data-billable="{{ Billable }}"
+                data-status="{{ Status }}">
+              <td class="px-4 py-4">
+                <div class="font-medium text-slate-950">{{ Employee }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ EntryId }}</div>
+              </td>
+              <td class="px-4 py-4">
+                <div class="font-medium text-slate-900">{{ Client }}</div>
+                <div class="mt-1 text-sm text-slate-500">{{ Project }}</div>
+              </td>
+              <td class="whitespace-nowrap px-4 py-4 text-sm text-slate-600">
+                <div>{{ Date }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ Start }} - {{ End }}</div>
+              </td>
+              <td class="whitespace-nowrap px-4 py-4">
+                <div class="font-semibold text-slate-950">{{ Hours }}</div>
+                <div class="mt-2"><span class="billable-pill">{{ Billable }}</span></div>
+              </td>
+              <td class="min-w-72 px-4 py-4 text-sm text-slate-600">
+                <div class="font-medium text-slate-900">{{ Task }}</div>
+                <div class="mt-1">{{ Notes }}</div>
+              </td>
+              <td class="whitespace-nowrap px-4 py-4">
+                <span class="status-pill">{{ Status }}</span>
+                <div class="mt-2 text-xs text-slate-500">Approved by {{ ApprovedBy }}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="empty_state" class="hidden border-t border-slate-200 p-8 text-center text-slate-500">
+        No timesheet entries match the current filters.
+      </div>
+    </section>
+
+    <section class="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
+      <div class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold text-slate-950">Submit a time entry</h2>
+        <form class="mt-6 space-y-6" data-sheet-best="https://api.sheetbest.com/sheets/YOUR_SHEET_ID/tabs/Timesheets">
+          <input type="hidden" name="EntryId" id="entryId">
+          <input type="hidden" name="SubmittedAt" id="submittedAt">
+
+          <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+              <label for="employee" class="block text-sm font-medium text-slate-900">Employee *</label>
+              <input type="text" name="Employee" id="employee" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="client" class="block text-sm font-medium text-slate-900">Client *</label>
+              <input type="text" name="Client" id="client" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="project" class="block text-sm font-medium text-slate-900">Project *</label>
+              <input type="text" name="Project" id="project" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="workDate" class="block text-sm font-medium text-slate-900">Date *</label>
+              <input type="date" name="Date" id="workDate" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="startTime" class="block text-sm font-medium text-slate-900">Start *</label>
+              <input type="time" name="Start" id="startTime" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="endTime" class="block text-sm font-medium text-slate-900">End *</label>
+              <input type="time" name="End" id="endTime" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="hours" class="block text-sm font-medium text-slate-900">Hours *</label>
+              <input type="number" step="0.25" min="0" name="Hours" id="hours" required
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+            <div>
+              <label for="billable" class="block text-sm font-medium text-slate-900">Billable *</label>
+              <select name="Billable" id="billable" required
+                      class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div>
+              <label for="status" class="block text-sm font-medium text-slate-900">Status *</label>
+              <select name="Status" id="status" required
+                      class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+                <option value="Submitted">Submitted</option>
+                <option value="In Review">In Review</option>
+                <option value="Approved">Approved</option>
+                <option value="Needs Changes">Needs Changes</option>
+              </select>
+            </div>
+            <div>
+              <label for="approvedBy" class="block text-sm font-medium text-slate-900">Approved by</label>
+              <input type="text" name="ApprovedBy" id="approvedBy"
+                     class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+            </div>
+          </div>
+
+          <div>
+            <label for="task" class="block text-sm font-medium text-slate-900">Task *</label>
+            <input type="text" name="Task" id="task" required
+                   class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600">
+          </div>
+
+          <div>
+            <label for="notes" class="block text-sm font-medium text-slate-900">Notes</label>
+            <textarea name="Notes" id="notes" rows="4"
+                      class="mt-2 block w-full rounded-md bg-white px-3 py-2 text-base text-slate-900 outline outline-1 -outline-offset-1 outline-slate-300 focus:outline-2 focus:-outline-offset-2 focus:outline-green-600"></textarea>
+          </div>
+
+          <div>
+            <button type="submit"
+                    class="inline-flex w-full items-center justify-center rounded-md bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+              Submit time entry
+            </button>
+            <p class="returnMessage mt-3 text-sm text-green-700"></p>
+          </div>
+        </form>
+      </div>
+
+      <aside class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-950">Google Sheet columns</h2>
+        <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <tbody class="divide-y divide-slate-200">
+              <tr><td class="px-3 py-2 font-medium text-slate-900">EntryId</td><td class="px-3 py-2 text-slate-500">Unique row ID</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Employee</td><td class="px-3 py-2 text-slate-500">Person logging time</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Client</td><td class="px-3 py-2 text-slate-500">Customer or internal</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Project</td><td class="px-3 py-2 text-slate-500">Project name</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Date</td><td class="px-3 py-2 text-slate-500">Work date</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Start / End</td><td class="px-3 py-2 text-slate-500">Time range</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Hours</td><td class="px-3 py-2 text-slate-500">Decimal hours</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Billable</td><td class="px-3 py-2 text-slate-500">Yes or No</td></tr>
+              <tr><td class="px-3 py-2 font-medium text-slate-900">Status</td><td class="px-3 py-2 text-slate-500">Approval state</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+    </section>
+
+    <section class="mx-auto max-w-xl py-8 lg:py-10">
+      <div class="rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-sm lg:px-8 lg:py-8">
+        <div class="mb-4 flex items-center gap-3">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+            </svg>
+          </div>
+          <h2 class="text-base font-semibold text-slate-950">About this template</h2>
+        </div>
+        <div class="space-y-3 text-sm text-slate-600">
+          <p>
+            This timesheets template helps you collect time entries, review billable hours, and track approval status, powered by <a href="https://sheetbest.com" class="font-medium text-green-600 hover:underline">SheetBest</a> and <strong>Google Sheets</strong>.
+          </p>
+          <p>
+            You can find the source code on GitHub on the <a href="https://github.com/sheetbest/timesheets-template" class="font-medium text-green-600 hover:underline">timesheets template repository</a>. You can also download the <a href="./timesheets.csv" class="font-medium text-green-600 hover:underline">sample CSV</a> and import it into Google Sheets to start with the same columns and demo data.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+      <div class="border-t border-slate-200 pt-8 text-center">
+        <p class="text-sm text-slate-600">Powered by <a href="https://sheetbest.com" class="text-green-600 hover:underline">Sheet Best</a> and Google Sheets &trade;</p>
+        <p class="mt-4 text-xs text-slate-500">This template is licensed under the <a href="LICENSE" class="text-green-600 hover:underline">MIT License</a>. Free to use, modify, and distribute.</p>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
